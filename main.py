@@ -62,30 +62,23 @@ def validate(req: ValidationRequest):
 class StreamRequest(BaseModel):
     prompt: str
     stream: bool = True
+
 @app.post("/stream")
 def stream(req: StreamRequest):
-    story = "Education reform is one of the most critical challenges facing modern society. For decades, educators and policymakers have debated how to best prepare students for an increasingly complex world. Traditional teaching methods while valuable often fail to engage students who learn differently. Consider Maria a passionate teacher in an underfunded school district. Despite limited resources she transforms her classroom into a hub of innovation using technology creatively. Her students once disengaged now compete in national science competitions. This is the power of dedicated teaching and innovative thinking. But here is the plot twist the greatest barrier to education reform is not funding or technology. It is our own resistance to change. When Maria proposed a new curriculum administrators initially rejected it. Only when students showed remarkable improvement did they embrace her methods. Real reform requires courage to challenge the status quo. The path forward requires collaboration between teachers parents policymakers and students. We must invest in teacher training modernize curricula and ensure every child has access to quality education regardless of zip code or economic status."
+    story = "Education reform is one of the most critical challenges facing modern society. For decades educators and policymakers have debated how to best prepare students for an increasingly complex world. Traditional teaching methods while valuable often fail to engage students who learn differently. Consider Maria a passionate teacher in an underfunded school district. Despite limited resources she transforms her classroom into a hub of innovation using technology creatively. Her students once disengaged now compete in national science competitions. This is the power of dedicated teaching. But here is the plot twist the greatest barrier to education reform is not funding or technology. It is our own resistance to change. When Maria proposed a new curriculum administrators initially rejected it. Only when students showed remarkable improvement did they embrace her methods. Real reform requires courage to challenge the status quo. The path forward requires collaboration between teachers parents policymakers and students. We must invest in teacher training modernize curricula and ensure every child has access to quality education."
 
     def generate_sync():
-        words = story.split()
-        for i, word in enumerate(words):
-            data = {"choices": [{"delta": {"content": word + " "}}]}
+        # Send character by character for maximum chunks
+        for char in story:
+            data = {"choices": [{"delta": {"content": char}}]}
             yield f"data: {json.dumps(data)}\n\n"
-            if i % 5 == 0:
-                time.sleep(0.01)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         generate_sync(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Transfer-Encoding": "chunked"
-        }
-    )   
-
-
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
 # Q26
 # Q26 - define class FIRST
 class QueryRequest(BaseModel):
