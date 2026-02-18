@@ -2,11 +2,13 @@ import numpy as np
 import hashlib
 import time
 import json
+from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from openai import OpenAI
+import httpx
 
 AI_PIPE_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjIzZjIwMDM2OTVAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.WcSwtS3kruSbFeC_U4UGWsZ9CDwedL3EpFryK0fhXMU"
 
@@ -140,8 +142,7 @@ def search(req: SearchRequest):
         rerank_resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": f"Rate relevance 0-10:\nQuery: {req.query}\nDoc: {doc}\nNumber only:"}],
-            max_tokens=5
-        )
+            max_tokens=5)
         try:
             rerank_score = float(rerank_resp.choices[0].message.content.strip()) / 10
         except:
@@ -153,3 +154,55 @@ def search(req: SearchRequest):
     results = [{"id": idx, "score": round(score, 4), "content": doc, "metadata": {"source": "api-docs"}}
                for score, idx, doc in top_reranked]
     return {"results": results, "reranked": True, "metrics": {"latency": latency, "totalDocs": len(docs)}}
+
+# Q24
+storage = []
+
+class PipelineRequest(BaseModel):
+    email: str
+    source: str = "JSONPlaceholder Users"
+
+@app.post("/pipeline")
+def pipeline(req: PipelineRequest):
+    errors = []
+    items = []
+    try:
+        response = httpx.get("https://jsonplaceholder.typicode.com/users", timeout=10)
+        users = response.json()[:3]
+    except Exception as e:
+        errors.append(str(e))
+        users = []
+
+    for user in users:
+        try:
+            text = f"Name: {user['name']}, Email: {user['email']}, Company: {user['company']['name']}, City: {user['address']['city']}"
+            ai_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": f"Analyze this person in 2 sentences and classify sentiment as positive/negative/neutral: {text}"}],
+                max_tokens=100
+            )
+            analysis = ai_response.choices[0].message.content
+            sentiment = "positive"
+            if "negative" in analysis.lower():
+                sentiment = "negative"
+            elif "neutral" in analysis.lower():
+                sentiment = "neutral"
+
+            item = {
+                "original": text,
+                "analysis": analysis,
+                "sentiment": sentiment,
+                "stored": True,
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }
+            storage.append(item)
+            items.append(item)
+        except Exception as e:
+            errors.append(str(e))
+
+    return {
+        "items": items,
+        "notificationSent": True,
+        "processedAt": datetime.utcnow().isoformat() + "Z",
+        "errors": errors
+    }
