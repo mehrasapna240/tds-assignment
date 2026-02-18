@@ -63,7 +63,7 @@ def generate(prompt):
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         stream=True,
-        max_tokens=400
+        max_tokens=100  # Reduced for faster first token
     )
     for chunk in response:
         if chunk.choices[0].delta.content:
