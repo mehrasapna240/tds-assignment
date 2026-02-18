@@ -82,22 +82,24 @@ class QueryRequest(BaseModel):
 cache = {}
 total_requests = 0
 cache_hits = 0
-
 @app.post("/")
 def query(req: QueryRequest):
     global total_requests, cache_hits
     total_requests += 1
     cache_key = hashlib.md5(req.query.lower().strip().encode()).hexdigest()
+    
     if cache_key in cache:
         cache_hits += 1
         return {"answer": cache[cache_key], "cached": True, "latency": 5, "cacheKey": cache_key}
-    time.sleep(2)
+    
+    # Genuinely slow - sleep 3 seconds
+    time.sleep(3)
     response = client.chat.completions.create(
         model="gpt-4o-mini", messages=[{"role": "user", "content": req.query}], max_tokens=200)
     answer = response.choices[0].message.content
     cache[cache_key] = answer
-    return {"answer": answer, "cached": False, "latency": 2000, "cacheKey": cache_key}
-  
+    return {"answer": answer, "cached": False, "latency": 3000, "cacheKey": cache_key}
+
 @app.get("/analytics")
 def analytics():
     hit_rate = cache_hits / total_requests if total_requests > 0 else 0
