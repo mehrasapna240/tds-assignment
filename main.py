@@ -29,7 +29,11 @@ class SimilarityRequest(BaseModel):
 @app.post("/similarity")
 def similarity(req: SimilarityRequest):
     all_texts = [req.query] + req.docs
-    response = client.embeddings.create(input=all_texts, model="text-embedding-3-small")
+    response = client.embeddings.create(
+        input=all_texts, 
+        model="text-embedding-3-small",
+        timeout=25
+    )
     embeddings = [e.embedding for e in response.data]
     query_emb = embeddings[0]
     scored = [(cosine_similarity(query_emb, embeddings[i+1]), doc) for i, doc in enumerate(req.docs)]
