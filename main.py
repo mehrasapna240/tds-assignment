@@ -93,8 +93,6 @@ def query(req: QueryRequest):
         cache_hits += 1
         return {"answer": cache[cache_key], "cached": True, "latency": 5, "cacheKey": cache_key}
     
-    # Simulate slow LLM call for uncached
-    time.sleep(2)
     response = client.chat.completions.create(
         model="gpt-4o-mini", messages=[{"role": "user", "content": req.query}], max_tokens=200)
     answer = response.choices[0].message.content
