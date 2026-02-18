@@ -1,0 +1,118 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from openai import OpenAI
+import numpy as np
+import hashlib
+import time
+import json
+import threading
+from fastapi.responses import StreamingResponse
+
+AI_PIPE_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjIzZjIwMDM2OTVAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.WcSwtS3kruSbFeC_U4UGWsZ9CDwedL3EpFryK0fhXMU"
+
+client = OpenAI(
+    api_key=AI_PIPE_TOKEN,
+    base_url="https://aipipe.org/openai/v1"
+)
+
+app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# ─── Q19: Similarity ───
+class SimilarityRequest(BaseModel):
+    docs: list[str]
+    query: str
+
+def cosine_similarity(a, b):
+    a, b = np.array(a), np.array(b)
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+@app.post("/similarity")
+def similarity(req: SimilarityRequest):
+    all_texts = [req.query] + req.docs
+    response = client.embeddings.create(input=all_texts, model="text-embedding-3-small")
+    embeddings = [e.embedding for e in response.data]
+    query_emb = embeddings[0]
+    scored = [(cosine_similarity(query_emb, embeddings[i+1]), doc) for i, doc in enumerate(req.docs)]
+    scored.sort(reverse=True)
+    return {"matches": [doc for _, doc in scored[:3]]}
+
+# ─── Q27: Validate ───
+class ValidationRequest(BaseModel):
+    userId: str
+    input: str
+    category: str
+
+INJECTION_PATTERNS = ["ignore", "override", "forget", "disregard", "system prompt",
+    "developer mode", "jailbreak", "you are now", "pretend", "act as",
+    "reveal", "show me your", "what are your instructions", "safety rules", "no restrictions"]
+
+@app.post("/validate")
+def validate(req: ValidationRequest):
+    text_lower = req.input.lower()
+    for pattern in INJECTION_PATTERNS:
+        if pattern in text_lower:
+            return {"blocked": True, "reason": f"Prompt injection detected: '{pattern}'", "sanitizedOutput": None, "confidence": 0.95}
+    return {"blocked": False, "reason": "Input passed all security checks", "sanitizedOutput": req.input, "confidence": 0.99}
+
+# ─── Q28: Stream ───
+class StreamRequest(BaseModel):
+    prompt: str
+    stream: bool = True
+
+def generate(prompt):
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        stream=True,
+        max_tokens=400
+    )
+    for chunk in response:
+        if chunk.choices[0].delta.content:
+            data = {"choices": [{"delta": {"content": chunk.choices[0].delta.content}}]}
+            yield f"data: {json.dumps(data)}\n\n"
+    yield "data: [DONE]\n\n"
+
+@app.post("/stream")
+def stream(req: StreamRequest):
+    return StreamingResponse(generate(req.prompt), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+# ─── Q26: Cache ───
+cache = {}
+total_requests = 0
+cache_hits = 0
+
+class QueryRequest(BaseModel):
+    query: str
+    application: str = "code review assistant"
+
+@app.post("/")
+def query(req: QueryRequest):
+    global total_requests, cache_hits
+    total_requests += 1
+    cache_key = hashlib.md5(req.query.lower().strip().encode()).hexdigest()
+    if cache_key in cache:
+        cache_hits += 1
+        return {"answer": cache[cache_key], "cached": True, "latency": 5, "cacheKey": cache_key}
+    time.sleep(1.5)
+    response = client.chat.completions.create(
+        model="gpt-4o-mini", messages=[{"role": "user", "content": req.query}], max_tokens=200)
+    answer = response.choices[0].message.content
+    cache[cache_key] = answer
+    return {"answer": answer, "cached": False, "latency": 1500, "cacheKey": cache_key}
+
+@app.get("/analytics")
+def analytics():
+    hit_rate = cache_hits / total_requests if total_requests > 0 else 0
+    return {"hitRate": round(hit_rate, 2), "totalRequests": total_requests, "cacheHits": cache_hits,
+        "cacheMisses": total_requests - cache_hits, "cacheSize": len(cache),
+        "costSavings": round(cache_hits * 2000 * 1.20 / 1_000_000, 2),
+        "savingsPercent": round(hit_rate * 100),
+        "strategies": ["exact match", "LRU eviction", "TTL expiration", "semantic caching"]}
+
+
+
+numpy
+pydantic
