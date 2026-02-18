@@ -61,9 +61,12 @@ class StreamRequest(BaseModel):
 def generate(prompt):
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": "Be concise."},
+            {"role": "user", "content": prompt}
+        ],
         stream=True,
-        max_tokens=100  # Reduced for faster first token
+        max_tokens=50
     )
     for chunk in response:
         if chunk.choices[0].delta.content:
