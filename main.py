@@ -96,9 +96,19 @@ tomorrow's problems with creativity, empathy, and critical thinking."""
         yield f"data: {json.dumps(data)}\n\n"
     yield "data: [DONE]\n\n"
 @app.post("/stream")
-def stream(req: StreamRequest):
-    return StreamingResponse(generate(req.prompt), media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+async def stream(req: StreamRequest):
+    async def generate_async():
+        story = "Education reform is one of the most critical challenges facing modern society. For decades, educators and policymakers have debated how to best prepare students for an increasingly complex world. Traditional teaching methods, while valuable, often fail to engage students who learn differently. Consider Maria, a passionate teacher in an underfunded school district. Despite limited resources, she transforms her classroom into a hub of innovation using technology creatively. Her students, once disengaged, now compete in national science competitions. This is the power of dedicated teaching and innovative thinking. But here is the plot twist - the greatest barrier to education reform is not funding or technology. It is our own resistance to change. When Maria proposed a new curriculum, administrators initially rejected it. Only when students showed remarkable improvement did they embrace her methods. Real reform requires courage to challenge the status quo and reimagine what education can be. The path forward requires collaboration between teachers, parents, policymakers, and students. We must invest in teacher training, modernize curricula, and ensure every child has access to quality education regardless of zip code or economic status."
+        
+        words = story.split()
+        for i in range(0, len(words), 2):
+            chunk = " ".join(words[i:i+2]) + " "
+            data = {"choices": [{"delta": {"content": chunk}}]}
+            yield f"data: {json.dumps(data)}\n\n"
+        yield "data: [DONE]\n\n"
+    
+    return StreamingResponse(generate_async(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Content-Type-Options": "nosniff"})
 
 cache = {}
 total_requests = 0
