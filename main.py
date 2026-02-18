@@ -80,12 +80,16 @@ def generate(prompt):
     Education is not just about grades - it is about preparing young minds to solve 
     tomorrow's problems with creativity, empathy, and critical thinking."""
     
-    words = story.split()
+    # Send first chunk immediately before anything else
+    first_data = {"choices": [{"delta": {"content": "Education "}}]}
+    yield f"data: {json.dumps(first_data)}\n\n"
+    
+    # Send rest of content
+    words = story.split()[1:]
     for word in words:
         data = {"choices": [{"delta": {"content": word + " "}}]}
         yield f"data: {json.dumps(data)}\n\n"
     yield "data: [DONE]\n\n"
-
 @app.post("/stream")
 def stream(req: StreamRequest):
     return StreamingResponse(generate(req.prompt), media_type="text/event-stream",
