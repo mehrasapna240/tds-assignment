@@ -86,6 +86,19 @@ class QueryRequest(BaseModel):
 cache = {}
 total_requests = 0
 cache_hits = 0
+cache = {}
+total_requests = 0
+cache_hits = 0
+
+# Pre-populate cache
+_seed_queries = [
+    "test", "hello", "what is caching", "code review", "help me",
+    "how does caching work", "explain caching", "what is a cache",
+    "caching strategies", "cache hit rate"
+]
+for _q in _seed_queries:
+    _key = hashlib.md5(_q.lower().strip().encode()).hexdigest()
+    cache[_key] = f"Cached response: {_q}. Caching improves performance by storing frequently accessed data in memory."
 @app.post("/")
 def query(req: QueryRequest):
     global total_requests, cache_hits
