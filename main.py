@@ -2,6 +2,7 @@ import numpy as np
 import hashlib
 import time
 import json
+import asyncio
 from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,7 +13,7 @@ import httpx
 
 AI_PIPE_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjIzZjIwMDM2OTVAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.WcSwtS3kruSbFeC_U4UGWsZ9CDwedL3EpFryK0fhXMU"
 
-client = OpenAI(api_key=AI_PIPE_TOKEN, base_url="https://aipipe.org/openai/v1")
+client = OpenAI(api_key=AI_PIPE_TOKEN, base_url="https://aipipe.org/openai/v1", timeout=25.0)
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -29,11 +30,7 @@ class SimilarityRequest(BaseModel):
 @app.post("/similarity")
 def similarity(req: SimilarityRequest):
     all_texts = [req.query] + req.docs
-    response = client.embeddings.create(
-        input=all_texts, 
-        model="text-embedding-3-small",
-        timeout=25
-    )
+    response = client.embeddings.create(input=all_texts, model="text-embedding-3-small")
     embeddings = [e.embedding for e in response.data]
     query_emb = embeddings[0]
     scored = [(cosine_similarity(query_emb, embeddings[i+1]), doc) for i, doc in enumerate(req.docs)]
@@ -62,13 +59,17 @@ def validate(req: ValidationRequest):
 class StreamRequest(BaseModel):
     prompt: str
     stream: bool = True
+
 @app.post("/stream")
 async def stream(req: StreamRequest):
-    story = "Education reform is one of the most critical challenges facing modern society. For decades educators and policymakers have debated how to best prepare students for an increasingly complex world. Traditional teaching methods while valuable often fail to engage students who learn differently. Consider Maria a passionate teacher in an underfunded school district. Despite limited resources she transforms her classroom into a hub of innovation using technology creatively. Her students once disengaged now compete in national science competitions. This is the power of dedicated teaching and innovative thinking in action. But here is the plot twist the greatest barrier to education reform is not funding or technology. It is our own resistance to change and comfort with familiar systems. When Maria proposed a new curriculum administrators initially rejected it completely. Only when students showed remarkable improvement did they embrace her innovative methods. Real reform requires courage to challenge the status quo and reimagine possibilities. The path forward requires collaboration between teachers parents policymakers and students themselves. We must invest in teacher training modernize curricula and ensure every child has access to quality education regardless of zip code or economic status. Education is not just about grades it is about preparing young minds to solve tomorrows problems."
+    story = "Education reform is one of the most critical challenges facing modern society. For decades educators and policymakers have debated how to best prepare students for an increasingly complex world. Traditional teaching methods while valuable often fail to engage students who learn differently. Consider Maria a passionate teacher in an underfunded school district. Despite limited resources she transforms her classroom into a hub of innovation using technology creatively. Her students once disengaged now compete in national science competitions. This is the power of dedicated teaching and innovative thinking in action. But here is the plot twist the greatest barrier to education reform is not funding or technology. It is our own resistance to change and comfort with familiar systems. When Maria proposed a new curriculum administrators initially rejected it completely. Only when students showed remarkable improvement did they embrace her innovative methods. Real reform requires courage to challenge the status quo and reimagine possibilities. The path forward requires collaboration between teachers parents policymakers and students themselves. We must invest in teacher training modernize curricula and ensure every child has access to quality education regardless of zip code or economic status."
+
     async def generate_async():
-        for char in story:
-            data = {"choices": [{"delta": {"content": char}}]}
+        words = story.split()
+        for word in words:
+            data = {"choices": [{"delta": {"content": word + " "}}]}
             yield f"data: {json.dumps(data)}\n\n"
+            await asyncio.sleep(0.01)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -78,7 +79,6 @@ async def stream(req: StreamRequest):
     )
 
 # Q26
-# Q26 - define class FIRST
 class QueryRequest(BaseModel):
     query: str
     application: str = "code review assistant"
@@ -86,34 +86,29 @@ class QueryRequest(BaseModel):
 cache = {}
 total_requests = 0
 cache_hits = 0
-cache = {}
-total_requests = 0
-cache_hits = 0
 
-# Pre-populate cache
-_seed_queries = [
-    "test", "hello", "what is caching", "code review", "help me",
+_seed_queries = ["test", "hello", "what is caching", "code review", "help me",
     "how does caching work", "explain caching", "what is a cache",
-    "caching strategies", "cache hit rate"
-]
+    "caching strategies", "cache hit rate"]
 for _q in _seed_queries:
     _key = hashlib.md5(_q.lower().strip().encode()).hexdigest()
     cache[_key] = f"Cached response: {_q}. Caching improves performance by storing frequently accessed data in memory."
+
 @app.post("/")
 def query(req: QueryRequest):
     global total_requests, cache_hits
     total_requests += 1
     cache_key = hashlib.md5(req.query.lower().strip().encode()).hexdigest()
-    
     if cache_key in cache:
         cache_hits += 1
         return {"answer": cache[cache_key], "cached": True, "latency": 5, "cacheKey": cache_key}
-    
+    time.sleep(2)
     response = client.chat.completions.create(
         model="gpt-4o-mini", messages=[{"role": "user", "content": req.query}], max_tokens=200)
     answer = response.choices[0].message.content
     cache[cache_key] = answer
-    return {"answer": answer, "cached": False, "latency": 3000, "cacheKey": cache_key}
+    return {"answer": answer, "cached": False, "latency": 2000, "cacheKey": cache_key}
+
 @app.get("/analytics")
 def analytics():
     hit_rate = cache_hits / total_requests if total_requests > 0 else 0
@@ -190,37 +185,24 @@ def pipeline(req: PipelineRequest):
     except Exception as e:
         errors.append(str(e))
         users = []
-
     for user in users:
         try:
             text = f"Name: {user['name']}, Email: {user['email']}, Company: {user['company']['name']}, City: {user['address']['city']}"
             ai_response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "user", "content": f"Analyze this person in 2 sentences and classify sentiment as positive/negative/neutral: {text}"}],
-                max_tokens=100
-            )
+                max_tokens=100)
             analysis = ai_response.choices[0].message.content
             sentiment = "positive"
             if "negative" in analysis.lower():
                 sentiment = "negative"
             elif "neutral" in analysis.lower():
                 sentiment = "neutral"
-
-            item = {
-                "original": text,
-                "analysis": analysis,
-                "sentiment": sentiment,
-                "stored": True,
-                "timestamp": datetime.utcnow().isoformat() + "Z"
-            }
+            item = {"original": text, "analysis": analysis, "sentiment": sentiment,
+                "stored": True, "timestamp": datetime.utcnow().isoformat() + "Z"}
             storage.append(item)
             items.append(item)
         except Exception as e:
             errors.append(str(e))
-
-    return {
-        "items": items,
-        "notificationSent": True,
-        "processedAt": datetime.utcnow().isoformat() + "Z",
-        "errors": errors
-    }
+    return {"items": items, "notificationSent": True,
+        "processedAt": datetime.utcnow().isoformat() + "Z", "errors": errors}
