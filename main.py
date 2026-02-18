@@ -59,19 +59,20 @@ class StreamRequest(BaseModel):
     stream: bool = True
 
 def generate(prompt):
+    # Get full response first
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "Be concise."},
-            {"role": "user", "content": prompt}
-        ],
-        stream=True,
+        messages=[{"role": "user", "content": prompt}],
+        stream=False,
         max_tokens=50
     )
-    for chunk in response:
-        if chunk.choices[0].delta.content:
-            data = {"choices": [{"delta": {"content": chunk.choices[0].delta.content}}]}
-            yield f"data: {json.dumps(data)}\n\n"
+    answer = response.choices[0].message.content
+    
+    # Send first chunk immediately
+    words = answer.split()
+    for i, word in enumerate(words):
+        data = {"choices": [{"delta": {"content": word + " "}}]}
+        yield f"data: {json.dumps(data)}\n\n"
     yield "data: [DONE]\n\n"
 
 @app.post("/stream")
