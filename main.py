@@ -60,29 +60,34 @@ class StreamRequest(BaseModel):
 
 def generate(prompt):
     story = """Education reform is one of the most critical challenges facing modern society. 
-    For decades, educators and policymakers have debated how to best prepare students for an 
-    increasingly complex world. Traditional teaching methods, while valuable, often fail to 
-    engage students who learn differently or come from disadvantaged backgrounds.
-    
-    Consider Maria, a passionate teacher in an underfunded school district. Despite limited 
-    resources, she transforms her classroom into a hub of innovation. She uses technology 
-    creatively, turning old tablets into learning tools. Her students, once disengaged, now 
-    compete in national science competitions. This is the power of dedicated teaching.
-    
-    But here is the plot twist - the greatest barrier to education reform is not funding or 
-    technology. It is our own resistance to change. When Maria proposed a new curriculum, 
-    administrators initially rejected it. Only when students showed remarkable improvement 
-    did they embrace her methods. Real reform requires courage to challenge the status quo.
-    
-    The path forward requires collaboration between teachers, parents, policymakers, and 
-    students themselves. We must invest in teacher training, modernize curricula, and ensure 
-    every child has access to quality education regardless of zip code or economic status. 
-    Education is not just about grades - it is about preparing young minds to solve 
-    tomorrow's problems with creativity, empathy, and critical thinking."""
-    
-    # Send first chunk immediately before anything else
-    first_data = {"choices": [{"delta": {"content": "Education "}}]}
-    yield f"data: {json.dumps(first_data)}\n\n"
+For decades, educators and policymakers have debated how to best prepare students for an 
+increasingly complex world. Traditional teaching methods, while valuable, often fail to 
+engage students who learn differently or come from disadvantaged backgrounds.
+
+Consider Maria, a passionate teacher in an underfunded school district. Despite limited 
+resources, she transforms her classroom into a hub of innovation. She uses technology 
+creatively, turning old tablets into learning tools. Her students, once disengaged, now 
+compete in national science competitions. This is the power of dedicated teaching.
+
+But here is the plot twist - the greatest barrier to education reform is not funding or 
+technology. It is our own resistance to change. When Maria proposed a new curriculum, 
+administrators initially rejected it. Only when students showed remarkable improvement 
+did they embrace her methods. Real reform requires courage to challenge the status quo.
+
+The path forward requires collaboration between teachers, parents, policymakers, and 
+students themselves. We must invest in teacher training, modernize curricula, and ensure 
+every child has access to quality education regardless of zip code or economic status. 
+Education is not just about grades - it is about preparing young minds to solve 
+tomorrow's problems with creativity, empathy, and critical thinking."""
+
+    words = story.split()
+    # Send in groups of 3 words per chunk
+    chunk_size = 3
+    for i in range(0, len(words), chunk_size):
+        chunk = " ".join(words[i:i+chunk_size]) + " "
+        data = {"choices": [{"delta": {"content": chunk}}]}
+        yield f"data: {json.dumps(data)}\n\n"
+    yield "data: [DONE]\n\n"
     
     # Send rest of content
     words = story.split()[1:]
