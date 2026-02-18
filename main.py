@@ -1,14 +1,13 @@
-import numpy as np
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from openai import OpenAI
 
+import numpy as np
 import hashlib
 import time
 import json
-import threading
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from openai import OpenAI
 
 AI_PIPE_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjIzZjIwMDM2OTVAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.WcSwtS3kruSbFeC_U4UGWsZ9CDwedL3EpFryK0fhXMU"
 
@@ -20,7 +19,6 @@ client = OpenAI(
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# ─── Q19: Similarity ───
 class SimilarityRequest(BaseModel):
     docs: list[str]
     query: str
@@ -39,7 +37,6 @@ def similarity(req: SimilarityRequest):
     scored.sort(reverse=True)
     return {"matches": [doc for _, doc in scored[:3]]}
 
-# ─── Q27: Validate ───
 class ValidationRequest(BaseModel):
     userId: str
     input: str
@@ -57,7 +54,6 @@ def validate(req: ValidationRequest):
             return {"blocked": True, "reason": f"Prompt injection detected: '{pattern}'", "sanitizedOutput": None, "confidence": 0.95}
     return {"blocked": False, "reason": "Input passed all security checks", "sanitizedOutput": req.input, "confidence": 0.99}
 
-# ─── Q28: Stream ───
 class StreamRequest(BaseModel):
     prompt: str
     stream: bool = True
@@ -80,7 +76,6 @@ def stream(req: StreamRequest):
     return StreamingResponse(generate(req.prompt), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-# ─── Q26: Cache ───
 cache = {}
 total_requests = 0
 cache_hits = 0
@@ -112,8 +107,3 @@ def analytics():
         "costSavings": round(cache_hits * 2000 * 1.20 / 1_000_000, 2),
         "savingsPercent": round(hit_rate * 100),
         "strategies": ["exact match", "LRU eviction", "TTL expiration", "semantic caching"]}
-
-
-
-numpy
-pydantic
