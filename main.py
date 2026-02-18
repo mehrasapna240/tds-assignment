@@ -92,12 +92,14 @@ def query(req: QueryRequest):
     if cache_key in cache:
         cache_hits += 1
         return {"answer": cache[cache_key], "cached": True, "latency": 5, "cacheKey": cache_key}
-    time.sleep(1.5)
+    
+    # Simulate slow LLM call for uncached
+    time.sleep(2)
     response = client.chat.completions.create(
         model="gpt-4o-mini", messages=[{"role": "user", "content": req.query}], max_tokens=200)
     answer = response.choices[0].message.content
     cache[cache_key] = answer
-    return {"answer": answer, "cached": False, "latency": 1500, "cacheKey": cache_key}
+    return {"answer": answer, "cached": False, "latency": 2000, "cacheKey": cache_key}
 
 @app.get("/analytics")
 def analytics():
