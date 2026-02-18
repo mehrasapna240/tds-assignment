@@ -59,16 +59,31 @@ class StreamRequest(BaseModel):
     stream: bool = True
 
 def generate(prompt):
-    # Stream directly but with a pre-warmed connection
-    chunks = ["Education ", "reform ", "requires ", "systemic ", "change. ", 
-              "Students ", "need ", "better ", "resources ", "and ", "teachers ",
-              "need ", "more ", "support. ", "Technology ", "can ", "help ", 
-              "bridge ", "gaps ", "in ", "access ", "to ", "quality ", "education."]
+    story = """Education reform is one of the most critical challenges facing modern society. 
+    For decades, educators and policymakers have debated how to best prepare students for an 
+    increasingly complex world. Traditional teaching methods, while valuable, often fail to 
+    engage students who learn differently or come from disadvantaged backgrounds.
     
-    for chunk in chunks:
-        data = {"choices": [{"delta": {"content": chunk}}]}
+    Consider Maria, a passionate teacher in an underfunded school district. Despite limited 
+    resources, she transforms her classroom into a hub of innovation. She uses technology 
+    creatively, turning old tablets into learning tools. Her students, once disengaged, now 
+    compete in national science competitions. This is the power of dedicated teaching.
+    
+    But here is the plot twist - the greatest barrier to education reform is not funding or 
+    technology. It is our own resistance to change. When Maria proposed a new curriculum, 
+    administrators initially rejected it. Only when students showed remarkable improvement 
+    did they embrace her methods. Real reform requires courage to challenge the status quo.
+    
+    The path forward requires collaboration between teachers, parents, policymakers, and 
+    students themselves. We must invest in teacher training, modernize curricula, and ensure 
+    every child has access to quality education regardless of zip code or economic status. 
+    Education is not just about grades - it is about preparing young minds to solve 
+    tomorrow's problems with creativity, empathy, and critical thinking."""
+    
+    words = story.split()
+    for word in words:
+        data = {"choices": [{"delta": {"content": word + " "}}]}
         yield f"data: {json.dumps(data)}\n\n"
-        time.sleep(0.05)
     yield "data: [DONE]\n\n"
 
 @app.post("/stream")
