@@ -333,7 +333,7 @@ def debug_transcript(video_id: str = "3c-iBn73dDE"):
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
                 cf.write(cookies_content)
                 cookie_file = cf.name
-            fetcher = YTA(cookie_path=cookie_file)
+            fetcher = YTA(cookies=cookie_file)
             t = fetcher.fetch(video_id)
             os.unlink(cookie_file)
         else:
@@ -364,7 +364,7 @@ def ask(req: AskRequest):
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
                     cf.write(cookies_content)
                     cookie_file = cf.name
-                fetcher = YTA(cookie_path=cookie_file)
+                fetcher = YTA(cookies=cookie_file)
                 raw = fetcher.fetch(video_id)
                 os.unlink(cookie_file)
             else:
