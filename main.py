@@ -8,6 +8,7 @@ import sys
 import tempfile
 import os
 import re
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,10 +16,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from openai import OpenAI
 import httpx
-from youtube_transcript_api import YouTubeTranscriptApi
+
+try:
+    from youtube_transcript_api import YouTubeTranscriptApi
+    YT_AVAILABLE = True
+except Exception:
+    YT_AVAILABLE = False
 
 AI_PIPE_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjIzZjIwMDM2OTVAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.WcSwtS3kruSbFeC_U4UGWsZ9CDwedL3EpFryK0fhXMU"
-
 client = OpenAI(api_key=AI_PIPE_TOKEN, base_url="https://aipipe.org/openai/v1", timeout=25.0)
 
 app = FastAPI()
@@ -34,31 +39,21 @@ class CodeRequest(BaseModel):
 
 @app.post("/code-interpreter")
 def code_interpreter(req: CodeRequest):
-    """Execute Python code and return stdout + error line numbers from tracebacks."""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
         f.write(req.code)
         tmp_path = f.name
-
     try:
-        result = subprocess.run(
-            [sys.executable, tmp_path],
-            capture_output=True, text=True, timeout=10
-        )
+        result = subprocess.run([sys.executable, tmp_path], capture_output=True, text=True, timeout=10)
         stdout = result.stdout
         stderr = result.stderr
-
-        # Parse traceback to find error line numbers
         error_lines = []
         if stderr:
-            # Match "File "...", line N" patterns
-            matches = re.findall(r'File ".*?", line (\d+)', stderr)
-            # Filter to lines referencing our temp file
             file_matches = re.findall(r'File "' + re.escape(tmp_path) + r'", line (\d+)', stderr)
+            matches = re.findall(r'File ".*?", line (\d+)', stderr)
             if file_matches:
                 error_lines = [int(n) for n in file_matches]
             elif matches:
                 error_lines = [int(n) for n in matches]
-
         if stderr:
             return {"error": error_lines, "result": stderr}
         else:
@@ -67,7 +62,6 @@ def code_interpreter(req: CodeRequest):
         return {"error": [], "result": "Execution timed out after 10 seconds"}
     finally:
         os.unlink(tmp_path)
-
 
 # Q19
 class SimilarityRequest(BaseModel):
@@ -119,11 +113,8 @@ async def stream(req: StreamRequest):
             await asyncio.sleep(0.01)
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(
-        generate_async(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-    )
+    return StreamingResponse(generate_async(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 # Q26
 class QueryRequest(BaseModel):
@@ -135,8 +126,7 @@ total_requests = 0
 cache_hits = 0
 
 _seed_queries = ["test", "hello", "what is caching", "code review", "help me",
-    "how does caching work", "explain caching", "what is a cache",
-    "caching strategies", "cache hit rate"]
+    "how does caching work", "explain caching", "what is a cache", "caching strategies", "cache hit rate"]
 for _q in _seed_queries:
     _key = hashlib.md5(_q.lower().strip().encode()).hexdigest()
     cache[_key] = f"Cached response: {_q}. Caching improves performance by storing frequently accessed data in memory."
@@ -149,8 +139,7 @@ def query(req: QueryRequest):
     if cache_key in cache:
         cache_hits += 1
         return {"answer": cache[cache_key], "cached": True, "latency": 5, "cacheKey": cache_key}
-    response = client.chat.completions.create(
-        model="gpt-4o-mini", messages=[{"role": "user", "content": req.query}], max_tokens=200)
+    response = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": req.query}], max_tokens=200)
     answer = response.choices[0].message.content
     cache[cache_key] = answer
     return {"answer": answer, "cached": False, "latency": 2000, "cacheKey": cache_key}
@@ -190,18 +179,13 @@ def search(req: SearchRequest):
     response = client.embeddings.create(input=all_texts, model="text-embedding-3-small")
     embeddings = [e.embedding for e in response.data]
     query_emb = embeddings[0]
-    scored = []
-    for i, doc in enumerate(docs):
-        score = cosine_similarity(query_emb, embeddings[i+1])
-        scored.append((score, i, doc))
+    scored = [(cosine_similarity(query_emb, embeddings[i+1]), i, doc) for i, doc in enumerate(docs)]
     scored.sort(reverse=True)
     top_k = scored[:req.k]
     reranked = []
     for score, idx, doc in top_k:
-        rerank_resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": f"Rate relevance 0-10:\nQuery: {req.query}\nDoc: {doc}\nNumber only:"}],
-            max_tokens=5)
+        rerank_resp = client.chat.completions.create(model="gpt-4o-mini",
+            messages=[{"role": "user", "content": f"Rate relevance 0-10:\nQuery: {req.query}\nDoc: {doc}\nNumber only:"}], max_tokens=5)
         try:
             rerank_score = float(rerank_resp.choices[0].message.content.strip()) / 10
         except:
@@ -234,10 +218,8 @@ def pipeline(req: PipelineRequest):
     for user in users:
         try:
             text = f"Name: {user['name']}, Email: {user['email']}, Company: {user['company']['name']}, City: {user['address']['city']}"
-            ai_response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": f"Analyze this person in 2 sentences and classify sentiment as positive/negative/neutral: {text}"}],
-                max_tokens=100)
+            ai_response = client.chat.completions.create(model="gpt-4o-mini",
+                messages=[{"role": "user", "content": f"Analyze this person in 2 sentences and classify sentiment as positive/negative/neutral: {text}"}], max_tokens=100)
             analysis = ai_response.choices[0].message.content
             sentiment = "positive"
             if "negative" in analysis.lower():
@@ -250,8 +232,7 @@ def pipeline(req: PipelineRequest):
             items.append(item)
         except Exception as e:
             errors.append(str(e))
-    return {"items": items, "notificationSent": True,
-        "processedAt": datetime.utcnow().isoformat() + "Z", "errors": errors}
+    return {"items": items, "notificationSent": True, "processedAt": datetime.utcnow().isoformat() + "Z", "errors": errors}
 
 # Q7 - YouTube Timestamp Finder
 class AskRequest(BaseModel):
@@ -278,43 +259,54 @@ def seconds_to_hhmmss(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 def get_transcript_via_scrape(video_id: str):
-    """Fetch transcript by scraping YouTube page for timedtext URL."""
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    r = httpx.get(f"https://www.youtube.com/watch?v={video_id}", headers=headers, timeout=15)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    r = httpx.get(f"https://www.youtube.com/watch?v={video_id}", headers=headers, timeout=20)
     html = r.text
 
-    # Find caption tracks
-    import xml.etree.ElementTree as ET
-    caption_url_match = re.search(r'"captionTracks":\[{"baseUrl":"([^"]+)"', html)
-    if not caption_url_match:
+    caption_url = None
+    for pat in [r'"captionTracks":\[{"baseUrl":"([^"]+)"', r'"baseUrl":"(https://www\.youtube\.com/api/timedtext[^"]+)"']:
+        m = re.search(pat, html)
+        if m:
+            caption_url = m.group(1)
+            break
+
+    if not caption_url:
         return None
 
-    caption_url = caption_url_match.group(1).replace('\\u0026', '&')
-    cr = httpx.get(caption_url, timeout=15)
-    root = ET.fromstring(cr.text)
+    caption_url = caption_url.encode().decode('unicode_escape').replace('\\u0026', '&')
 
+    cr = httpx.get(caption_url, headers=headers, timeout=20)
+    if not cr.text.strip():
+        return None
+
+    root = ET.fromstring(cr.text)
     transcript = []
     for text_el in root.findall('.//text'):
         start = float(text_el.get('start', 0))
         text = text_el.text or ''
-        # Clean HTML entities
         text = re.sub(r'<[^>]+>', '', text)
         text = text.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&#39;', "'").replace('&quot;', '"')
-        transcript.append({'start': start, 'text': text.strip()})
+        if text.strip():
+            transcript.append({'start': start, 'text': text.strip()})
 
-    return transcript
+    return transcript if transcript else None
 
 @app.get("/debug-transcript")
 def debug_transcript(video_id: str = "3c-iBn73dDE"):
     results = {"video_id": video_id, "library": None, "scrape": None, "error_library": None, "error_scrape": None}
     try:
-        t = YouTubeTranscriptApi.get_transcript(video_id)
-        results["library"] = f"OK - {len(t)} entries"
+        from youtube_transcript_api import YouTubeTranscriptApi as YTA
+        fetcher = YTA()
+        t = fetcher.fetch(video_id)
+        results["library"] = f"OK - {len(t)} entries, sample: {str(t[0])[:100]}"
     except Exception as e:
         results["error_library"] = str(e)
     try:
         t2 = get_transcript_via_scrape(video_id)
-        results["scrape"] = f"OK - {len(t2)} entries" if t2 else "None"
+        results["scrape"] = f"OK - {len(t2)} entries, sample: {str(t2[0])[:100]}" if t2 else "None"
     except Exception as e:
         results["error_scrape"] = str(e)
     return results
@@ -324,13 +316,17 @@ def ask(req: AskRequest):
     try:
         video_id = extract_video_id(req.video_url)
 
-        # Try youtube-transcript-api first, then scraping
+        # Method 1: youtube-transcript-api (new API)
         transcript = None
         try:
-            transcript = YouTubeTranscriptApi.get_transcript(video_id)
+            from youtube_transcript_api import YouTubeTranscriptApi as YTA
+            fetcher = YTA()
+            raw = fetcher.fetch(video_id)
+            transcript = [{'start': s.start, 'text': s.text} for s in raw]
         except Exception:
             pass
 
+        # Method 2: scrape YouTube page
         if not transcript:
             try:
                 transcript = get_transcript_via_scrape(video_id)
@@ -340,30 +336,14 @@ def ask(req: AskRequest):
         if not transcript:
             return {"timestamp": "00:00:00", "video_url": req.video_url, "topic": req.topic}
 
-        topic_lower = req.topic.lower()
-        topic_words = [w for w in topic_lower.split() if len(w) > 3]
-
-        # Score each segment by word matches
-        scored = []
-        for entry in transcript:
-            text_lower = entry['text'].lower()
-            score = sum(1 for word in topic_words if word in text_lower)
-            if score > 0:
-                scored.append((score, entry['start'], entry['text']))
-        scored.sort(reverse=True)
-
-        if scored and scored[0][0] >= 2:
-            best_time = scored[0][1]
-            return {"timestamp": seconds_to_hhmmss(best_time), "video_url": req.video_url, "topic": req.topic}
-
-        # Use GPT with transcript context
+        # Build timestamped transcript text
         chunks = []
         for entry in transcript:
             t = int(entry['start'])
             h, m, s = t // 3600, (t % 3600) // 60, t % 60
             chunks.append(f"[{h:02d}:{m:02d}:{s:02d}] {entry['text']}")
 
-        # Sample transcript evenly - take every 2nd entry, max 600 lines
+        # Sample every 2nd entry, max 600 lines to fit GPT context
         transcript_text = "\n".join(chunks[::2][:600])
 
         response = client.chat.completions.create(
