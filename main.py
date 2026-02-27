@@ -350,6 +350,7 @@ def debug_transcript(video_id: str = "3c-iBn73dDE"):
 
 @app.post("/ask")
 def ask(req: AskRequest):
+    transcript_error = None
     try:
         video_id = extract_video_id(req.video_url)
 
@@ -357,13 +358,11 @@ def ask(req: AskRequest):
         transcript = None
         try:
             from youtube_transcript_api import YouTubeTranscriptApi as YTA
-            import os, requests, http.cookiejar, io
+            import os, requests, http.cookiejar, tempfile
             cookies_content = os.environ.get("YOUTUBE_COOKIES", "")
             if cookies_content:
                 session = requests.Session()
                 cj = http.cookiejar.MozillaCookieJar()
-                cj._cookies_from_attrs_set = lambda *a, **k: None
-                import tempfile
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
                     cf.write(cookies_content)
                     cookie_file = cf.name
@@ -375,18 +374,11 @@ def ask(req: AskRequest):
                 fetcher = YTA()
             raw = fetcher.fetch(video_id)
             transcript = [{'start': e.start, 'text': e.text} for e in raw]
-        except Exception:
-            pass
-
-        # Method 2: scrape YouTube page
-        if not transcript:
-            try:
-                transcript = get_transcript_via_scrape(video_id)
-            except Exception:
-                pass
+        except Exception as e1:
+            transcript_error = str(e1)
 
         if not transcript:
-            return {"timestamp": "00:00:00", "video_url": req.video_url, "topic": req.topic}
+            return {"timestamp": "00:00:00", "video_url": req.video_url, "topic": req.topic, "error": transcript_error}
 
         # Build timestamped transcript text
         chunks = []
@@ -408,9 +400,10 @@ def ask(req: AskRequest):
         scored.sort(reverse=True)
 
         if scored:
-            return {"timestamp": seconds_to_hhmmss(scored[0][1]), "video_url": req.video_url, "topic": req.topic}
+            return {"timestamp": seconds_to_hhmmss(scored[0][1]), "video_url": req.video_url, "topic": req.topic, "debug_score": scored[0][0], "debug_text": scored[0][2]}
 
-        return {"timestamp": "00:00:00", "video_url": req.video_url, "topic": req.topic}
+        # No match - return transcript length as debug
+        return {"timestamp": "00:00:00", "video_url": req.video_url, "topic": req.topic, "debug": f"no match, transcript len={len(transcript)}, words={topic_words}"}
 
     except Exception as e:
         return {"timestamp": "00:00:00", "video_url": req.video_url, "topic": req.topic}
