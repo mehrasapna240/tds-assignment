@@ -58,13 +58,12 @@ def code_interpreter(req: CodeRequest):
             elif matches:
                 error_lines = [int(n) for n in matches]
 
-        return {
-            "output": stdout,
-            "error": stderr if stderr else None,
-            "error_lines": error_lines
-        }
+        if stderr:
+            return {"error": error_lines, "result": stderr}
+        else:
+            return {"error": [], "result": stdout}
     except subprocess.TimeoutExpired:
-        return {"output": "", "error": "Execution timed out after 10 seconds", "error_lines": []}
+        return {"error": [], "result": "Execution timed out after 10 seconds"}
     finally:
         os.unlink(tmp_path)
 
