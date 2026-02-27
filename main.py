@@ -364,13 +364,14 @@ def ask(req: AskRequest):
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
                     cf.write(cookies_content)
                     cookie_file = cf.name
-                fetcher = YTA(cookies=cookie_file)
-                raw = fetcher.fetch(video_id)
+                try:
+                    raw = YTA.get_transcript(video_id, cookies=cookie_file)
+                except Exception:
+                    raw = YTA().fetch(video_id, cookies=cookie_file)
                 os.unlink(cookie_file)
             else:
-                fetcher = YTA()
-                raw = fetcher.fetch(video_id)
-            transcript = [{'start': s.start, 'text': s.text} for s in raw]
+                raw = YTA().fetch(video_id)
+            transcript = [{'start': e['start'] if isinstance(e, dict) else e.start, 'text': e['text'] if isinstance(e, dict) else e.text} for e in raw]
         except Exception:
             pass
 
