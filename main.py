@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from openai import OpenAI
 import httpx
+from youtube_transcript_api import YouTubeTranscriptApi
 
 AI_PIPE_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjIzZjIwMDM2OTVAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.WcSwtS3kruSbFeC_U4UGWsZ9CDwedL3EpFryK0fhXMU"
 
@@ -251,3 +252,68 @@ def pipeline(req: PipelineRequest):
             errors.append(str(e))
     return {"items": items, "notificationSent": True,
         "processedAt": datetime.utcnow().isoformat() + "Z", "errors": errors}
+
+# Q7 - YouTube Timestamp Finder
+class AskRequest(BaseModel):
+    video_url: str
+    topic: str
+
+def extract_video_id(url: str) -> str:
+    patterns = [
+        r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
+        r'(?:embed\/)([0-9A-Za-z_-]{11})',
+        r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    raise ValueError(f"Could not extract video ID from URL: {url}")
+
+def seconds_to_hhmmss(seconds: float) -> str:
+    seconds = int(seconds)
+    h = seconds // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+@app.post("/ask")
+def ask(req: AskRequest):
+    try:
+        video_id = extract_video_id(req.video_url)
+        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+
+        topic_lower = req.topic.lower()
+        topic_words = [w for w in topic_lower.split() if len(w) > 2]
+
+        best_match_time = None
+        best_score = 0
+
+        for entry in transcript:
+            text_lower = entry['text'].lower()
+            score = sum(1 for word in topic_words if word in text_lower)
+            if score > best_score:
+                best_score = score
+                best_match_time = entry['start']
+
+        if best_match_time is None:
+            for entry in transcript:
+                if topic_lower in entry['text'].lower():
+                    best_match_time = entry['start']
+                    break
+
+        if best_match_time is None:
+            best_match_time = 0
+
+        return {
+            "timestamp": seconds_to_hhmmss(best_match_time),
+            "video_url": req.video_url,
+            "topic": req.topic
+        }
+
+    except Exception as e:
+        return {
+            "timestamp": "00:00:00",
+            "video_url": req.video_url,
+            "topic": req.topic
+        }
