@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 import json
-import re
 
 app = FastAPI()
 
@@ -30,8 +29,7 @@ Available functions:
 Return ONLY JSON like: {"name": "function_name", "arguments": "{\"param\": value}"}
 Arguments must be a JSON-encoded string."""
 
-@app.get("/execute")
-def execute(q: str):
+def call_llm(q: str):
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -41,7 +39,16 @@ def execute(q: str):
             ]
         )
         content = response.choices[0].message.content.strip()
-        result = json.loads(content)
-        return result
+        return json.loads(content)
     except Exception as e:
         return {"error": str(e)}
+
+@app.get("/execute")
+def execute(q: str):
+    return call_llm(q)
+
+@app.get("/")
+def root(q: str = None):
+    if q:
+        return call_llm(q)
+    return {"status": "ok"}
