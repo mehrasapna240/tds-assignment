@@ -324,30 +324,28 @@ def get_transcript_via_scrape(video_id: str):
 
 @app.get("/debug-transcript")
 def debug_transcript(video_id: str = "3c-iBn73dDE"):
-    results = {"video_id": video_id, "library": None, "scrape": None, "error_library": None, "error_scrape": None}
+    import os, requests, http.cookiejar, tempfile
+    from youtube_transcript_api import YouTubeTranscriptApi as YTA
+    results = {"video_id": video_id}
+    cookies_content = os.environ.get("YOUTUBE_COOKIES", "")
+    results["has_cookies"] = bool(cookies_content)
     try:
-        from youtube_transcript_api import YouTubeTranscriptApi as YTA
-        import tempfile, os
-        cookies_content = os.environ.get("YOUTUBE_COOKIES", "")
         if cookies_content:
+            session = requests.Session()
+            cj = http.cookiejar.MozillaCookieJar()
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
                 cf.write(cookies_content)
                 cookie_file = cf.name
-            # Check signature
-            import inspect
-            sig = str(inspect.signature(YTA.__init__))
-            results["init_sig"] = sig
-            # Try passing cookies to fetch instead
-            raw = YTA().fetch(video_id, cookies=cookie_file)
+            cj.load(cookie_file, ignore_discard=True, ignore_expires=True)
             os.unlink(cookie_file)
-            results["library"] = f"OK - {len(raw)} entries"
+            session.cookies = cj
+            fetcher = YTA(http_client=session)
+        else:
+            fetcher = YTA()
+        raw = fetcher.fetch(video_id)
+        results["library"] = f"OK - {len(raw)} entries, sample: {str(raw[0])[:80]}"
     except Exception as e:
-        results["error_library"] = str(e)
-    try:
-        t2 = get_transcript_via_scrape(video_id)
-        results["scrape"] = f"OK - {len(t2)} entries, sample: {str(t2[0])[:100]}" if t2 else "None"
-    except Exception as e:
-        results["error_scrape"] = str(e)
+        results["error"] = str(e)
     return results
 
 @app.post("/ask")
@@ -359,20 +357,24 @@ def ask(req: AskRequest):
         transcript = None
         try:
             from youtube_transcript_api import YouTubeTranscriptApi as YTA
-            import tempfile, os
+            import os, requests, http.cookiejar, io
             cookies_content = os.environ.get("YOUTUBE_COOKIES", "")
             if cookies_content:
+                session = requests.Session()
+                cj = http.cookiejar.MozillaCookieJar()
+                cj._cookies_from_attrs_set = lambda *a, **k: None
+                import tempfile
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
                     cf.write(cookies_content)
                     cookie_file = cf.name
-                try:
-                    raw = YTA.get_transcript(video_id, cookies=cookie_file)
-                except Exception:
-                    raw = YTA().fetch(video_id, cookies=cookie_file)
+                cj.load(cookie_file, ignore_discard=True, ignore_expires=True)
                 os.unlink(cookie_file)
+                session.cookies = cj
+                fetcher = YTA(http_client=session)
             else:
-                raw = YTA().fetch(video_id)
-            transcript = [{'start': e['start'] if isinstance(e, dict) else e.start, 'text': e['text'] if isinstance(e, dict) else e.text} for e in raw]
+                fetcher = YTA()
+            raw = fetcher.fetch(video_id)
+            transcript = [{'start': e.start, 'text': e.text} for e in raw]
         except Exception:
             pass
 
