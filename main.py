@@ -333,13 +333,14 @@ def debug_transcript(video_id: str = "3c-iBn73dDE"):
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
                 cf.write(cookies_content)
                 cookie_file = cf.name
-            fetcher = YTA(cookies=cookie_file)
-            t = fetcher.fetch(video_id)
+            # Check signature
+            import inspect
+            sig = str(inspect.signature(YTA.__init__))
+            results["init_sig"] = sig
+            # Try passing cookies to fetch instead
+            raw = YTA().fetch(video_id, cookies=cookie_file)
             os.unlink(cookie_file)
-        else:
-            fetcher = YTA()
-            t = fetcher.fetch(video_id)
-        results["library"] = f"OK - {len(t)} entries, sample: {str(t[0])[:100]}"
+            results["library"] = f"OK - {len(raw)} entries"
     except Exception as e:
         results["error_library"] = str(e)
     try:
