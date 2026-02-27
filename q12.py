@@ -33,7 +33,12 @@ def execute(q: str):
             tools=tools,
             tool_choice="auto"
         )
-        tool_call = response.choices[0].message.tool_calls[0]
-        return {"name": tool_call.function.name, "arguments": tool_call.function.arguments}
+        message = response.choices[0].message
+        tool_calls = message.tool_calls
+        if tool_calls:
+            tool_call = tool_calls[0]
+            return {"name": tool_call.function.name, "arguments": tool_call.function.arguments}
+        else:
+            return {"error": "No function call", "content": message.content}
     except Exception as e:
         return {"error": str(e)}
