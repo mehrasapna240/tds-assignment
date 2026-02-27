@@ -395,3 +395,28 @@ Reply ONLY with the timestamp in HH:MM:SS format. Nothing else."""
 
     except Exception as e:
         return {"timestamp": "00:00:00", "video_url": req.video_url, "topic": req.topic}
+
+# Q2 - Sentiment Analysis
+class CommentRequest(BaseModel):
+    comment: str
+
+@app.post("/comment")
+def comment(req: CommentRequest):
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{
+            "role": "user",
+            "content": f"""Analyze the sentiment of this comment and return JSON with exactly these fields:
+- sentiment: one of "positive", "negative", or "neutral"
+- rating: integer 1-5 (5=very positive, 1=very negative)
+
+Comment: "{req.comment}"
+
+Return only valid JSON, nothing else."""
+        }],
+        response_format={"type": "json_object"},
+        max_tokens=50
+    )
+    import json as _json
+    result = _json.loads(response.choices[0].message.content)
+    return {"sentiment": result["sentiment"], "rating": int(result["rating"])}
