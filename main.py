@@ -281,32 +281,61 @@ def seconds_to_hhmmss(seconds: float) -> str:
 def ask(req: AskRequest):
     try:
         video_id = extract_video_id(req.video_url)
-        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+
+        # Try to get transcript in multiple languages
+        try:
+            transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        except Exception:
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            transcript = transcript_list.find_transcript(['en']).fetch()
 
         topic_lower = req.topic.lower()
-        topic_words = [w for w in topic_lower.split() if len(w) > 2]
+        topic_words = [w for w in topic_lower.split() if len(w) > 3]
 
-        best_match_time = None
-        best_score = 0
-
+        # Score each segment
+        scored = []
         for entry in transcript:
             text_lower = entry['text'].lower()
             score = sum(1 for word in topic_words if word in text_lower)
-            if score > best_score:
-                best_score = score
-                best_match_time = entry['start']
+            if score > 0:
+                scored.append((score, entry['start'], entry['text']))
+        scored.sort(reverse=True)
 
-        if best_match_time is None:
+        if scored:
+            best_time = scored[0][1]
+        else:
+            # Use GPT to find timestamp from transcript chunks
+            # Build transcript text with timestamps
+            chunks = []
             for entry in transcript:
-                if topic_lower in entry['text'].lower():
-                    best_match_time = entry['start']
-                    break
+                t = int(entry['start'])
+                h, m, s = t // 3600, (t % 3600) // 60, t % 60
+                chunks.append(f"[{h:02d}:{m:02d}:{s:02d}] {entry['text']}")
 
-        if best_match_time is None:
-            best_match_time = 0
+            # Send to GPT in chunks (take every 3rd entry to fit context)
+            transcript_text = "\n".join(chunks[::2][:500])
+
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{
+                    "role": "user",
+                    "content": f"""Here is a YouTube transcript with timestamps. Find the timestamp where this topic is first mentioned: "{req.topic}"
+
+Transcript:
+{transcript_text}
+
+Reply with ONLY the timestamp in HH:MM:SS format, nothing else."""
+                }],
+                max_tokens=20
+            )
+            ts = response.choices[0].message.content.strip()
+            # Validate format
+            if re.match(r'\d{2}:\d{2}:\d{2}', ts):
+                return {"timestamp": ts, "video_url": req.video_url, "topic": req.topic}
+            best_time = 0
 
         return {
-            "timestamp": seconds_to_hhmmss(best_match_time),
+            "timestamp": seconds_to_hhmmss(best_time),
             "video_url": req.video_url,
             "topic": req.topic
         }
