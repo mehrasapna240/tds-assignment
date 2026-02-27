@@ -327,8 +327,18 @@ def debug_transcript(video_id: str = "3c-iBn73dDE"):
     results = {"video_id": video_id, "library": None, "scrape": None, "error_library": None, "error_scrape": None}
     try:
         from youtube_transcript_api import YouTubeTranscriptApi as YTA
-        fetcher = YTA()
-        t = fetcher.fetch(video_id)
+        import tempfile, os
+        cookies_content = os.environ.get("YOUTUBE_COOKIES", "")
+        if cookies_content:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
+                cf.write(cookies_content)
+                cookie_file = cf.name
+            fetcher = YTA(cookie_path=cookie_file)
+            t = fetcher.fetch(video_id)
+            os.unlink(cookie_file)
+        else:
+            fetcher = YTA()
+            t = fetcher.fetch(video_id)
         results["library"] = f"OK - {len(t)} entries, sample: {str(t[0])[:100]}"
     except Exception as e:
         results["error_library"] = str(e)
@@ -344,12 +354,22 @@ def ask(req: AskRequest):
     try:
         video_id = extract_video_id(req.video_url)
 
-        # Method 1: youtube-transcript-api (new API)
+        # Method 1: youtube-transcript-api with cookies
         transcript = None
         try:
             from youtube_transcript_api import YouTubeTranscriptApi as YTA
-            fetcher = YTA()
-            raw = fetcher.fetch(video_id)
+            import tempfile, os
+            cookies_content = os.environ.get("YOUTUBE_COOKIES", "")
+            if cookies_content:
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as cf:
+                    cf.write(cookies_content)
+                    cookie_file = cf.name
+                fetcher = YTA(cookie_path=cookie_file)
+                raw = fetcher.fetch(video_id)
+                os.unlink(cookie_file)
+            else:
+                fetcher = YTA()
+                raw = fetcher.fetch(video_id)
             transcript = [{'start': s.start, 'text': s.text} for s in raw]
         except Exception:
             pass
