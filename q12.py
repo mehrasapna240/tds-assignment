@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from openai import OpenAI
 
 app = FastAPI()
@@ -27,11 +26,14 @@ functions = [
 
 @app.get("/execute")
 def execute(q: str):
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": q}],
-        functions=functions,
-        function_call="auto"
-    )
-    fn = response.choices[0].message.function_call
-    return {"name": fn.name, "arguments": fn.arguments}
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": q}],
+            functions=functions,
+            function_call="auto"
+        )
+        fn = response.choices[0].message.function_call
+        return {"name": fn.name, "arguments": fn.arguments}
+    except Exception as e:
+        return {"error": str(e)}
