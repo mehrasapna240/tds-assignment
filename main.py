@@ -3,6 +3,11 @@ import hashlib
 import time
 import json
 import asyncio
+import subprocess
+import sys
+import tempfile
+import os
+import re
 from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +26,48 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 def cosine_similarity(a, b):
     a, b = np.array(a), np.array(b)
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+# Q3 - Code Interpreter
+class CodeRequest(BaseModel):
+    code: str
+
+@app.post("/code-interpreter")
+def code_interpreter(req: CodeRequest):
+    """Execute Python code and return stdout + error line numbers from tracebacks."""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        f.write(req.code)
+        tmp_path = f.name
+
+    try:
+        result = subprocess.run(
+            [sys.executable, tmp_path],
+            capture_output=True, text=True, timeout=10
+        )
+        stdout = result.stdout
+        stderr = result.stderr
+
+        # Parse traceback to find error line numbers
+        error_lines = []
+        if stderr:
+            # Match "File "...", line N" patterns
+            matches = re.findall(r'File ".*?", line (\d+)', stderr)
+            # Filter to lines referencing our temp file
+            file_matches = re.findall(r'File "' + re.escape(tmp_path) + r'", line (\d+)', stderr)
+            if file_matches:
+                error_lines = [int(n) for n in file_matches]
+            elif matches:
+                error_lines = [int(n) for n in matches]
+
+        return {
+            "output": stdout,
+            "error": stderr if stderr else None,
+            "error_lines": error_lines
+        }
+    except subprocess.TimeoutExpired:
+        return {"output": "", "error": "Execution timed out after 10 seconds", "error_lines": []}
+    finally:
+        os.unlink(tmp_path)
+
 
 # Q19
 class SimilarityRequest(BaseModel):
@@ -107,6 +154,7 @@ def query(req: QueryRequest):
     answer = response.choices[0].message.content
     cache[cache_key] = answer
     return {"answer": answer, "cached": False, "latency": 2000, "cacheKey": cache_key}
+
 @app.get("/analytics")
 def analytics():
     hit_rate = cache_hits / total_requests if total_requests > 0 else 0
