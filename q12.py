@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 import json
+import re
 
 app = FastAPI()
 
@@ -17,27 +18,30 @@ client = OpenAI(
     base_url="https://aipipe.org/openai/v1"
 )
 
-functions = [
-    {"name": "get_ticket_status", "description": "Get status of a support ticket", "parameters": {"type": "object", "properties": {"ticket_id": {"type": "integer"}}, "required": ["ticket_id"]}},
-    {"name": "schedule_meeting", "description": "Schedule a meeting", "parameters": {"type": "object", "properties": {"date": {"type": "string"}, "time": {"type": "string"}, "meeting_room": {"type": "string"}}, "required": ["date", "time", "meeting_room"]}},
-    {"name": "get_expense_balance", "description": "Get expense balance for employee", "parameters": {"type": "object", "properties": {"employee_id": {"type": "integer"}}, "required": ["employee_id"]}},
-    {"name": "calculate_performance_bonus", "description": "Calculate performance bonus", "parameters": {"type": "object", "properties": {"employee_id": {"type": "integer"}, "current_year": {"type": "integer"}}, "required": ["employee_id", "current_year"]}},
-    {"name": "report_office_issue", "description": "Report an office issue", "parameters": {"type": "object", "properties": {"issue_code": {"type": "integer"}, "department": {"type": "string"}}, "required": ["issue_code", "department"]}},
-]
+SYSTEM_PROMPT = """You are a function router. Given a user query, return ONLY a JSON object with "name" and "arguments" fields.
+
+Available functions:
+- get_ticket_status(ticket_id: int)
+- schedule_meeting(date: str, time: str, meeting_room: str)
+- get_expense_balance(employee_id: int)
+- calculate_performance_bonus(employee_id: int, current_year: int)
+- report_office_issue(issue_code: int, department: str)
+
+Return ONLY JSON like: {"name": "function_name", "arguments": "{\"param\": value}"}
+Arguments must be a JSON-encoded string."""
 
 @app.get("/execute")
 def execute(q: str):
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": q}],
-            functions=functions,
-            function_call="auto"
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": q}
+            ]
         )
-        message = response.choices[0].message
-        if message.function_call:
-            return {"name": message.function_call.name, "arguments": message.function_call.arguments}
-        else:
-            return {"error": "No function call", "content": message.content}
+        content = response.choices[0].message.content.strip()
+        result = json.loads(content)
+        return result
     except Exception as e:
         return {"error": str(e)}
