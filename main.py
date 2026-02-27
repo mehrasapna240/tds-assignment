@@ -387,3 +387,30 @@ Return only valid JSON, nothing else."""
     import json as _json
     result = _json.loads(response.choices[0].message.content)
     return {"sentiment": result["sentiment"], "rating": int(result["rating"])}
+
+# Q12 - Function Calling
+SYSTEM_PROMPT = """You are a function router. Given a user query, return ONLY a JSON object with "name" and "arguments" fields.
+Available functions:
+- get_ticket_status(ticket_id: int)
+- schedule_meeting(date: str, time: str, meeting_room: str)
+- get_expense_balance(employee_id: int)
+- calculate_performance_bonus(employee_id: int, current_year: int)
+- report_office_issue(issue_code: int, department: str)
+Return ONLY JSON like: {"name": "function_name", "arguments": "{\"param\": value}"}
+Arguments must be a JSON-encoded string."""
+
+@app.get("/execute")
+def execute(q: str):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": q}
+            ]
+        )
+        import json as _json
+        content = response.choices[0].message.content.strip()
+        return _json.loads(content)
+    except Exception as e:
+        return {"error": str(e)}
