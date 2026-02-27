@@ -1,0 +1,36 @@
+name: Scrape Table Sums
+
+on:
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: 23f2003695@ds.study.iitm.ac.in
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install chromium
+          cat << 'EOF' > scrape.js
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch();
+            const page = await browser.newPage();
+            let total = 0;
+            for (let seed = 10; seed <= 19; seed++) {
+              await page.goto(`https://sanand0.github.io/tdsdata/js_table/?seed=${seed}`);
+              await page.waitForSelector('table');
+              const cells = await page.$$eval('td, th', cells =>
+                cells.map(c => parseFloat(c.innerText.trim())).filter(n => !isNaN(n))
+              );
+              total += cells.reduce((a, b) => a + b, 0);
+            }
+            await browser.close();
+            console.log(`Total sum: ${total}`);
+          })();
+          EOF
+          node scrape.js
