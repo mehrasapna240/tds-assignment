@@ -30,7 +30,7 @@ jobs:
               total += cells.reduce((a, b) => a + b, 0);
             }
             await browser.close();
-            console.log(`Total sum: ${total}`);
+            console.log(total);
           })();
           EOF
           node scrape.js
