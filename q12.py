@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from openai import OpenAI
 import json
 
@@ -52,3 +53,21 @@ def root(q: str = None):
     if q:
         return call_llm(q)
     return {"status": "ok"}
+
+class Comment(BaseModel):
+    comment: str
+
+@app.post("/comment")
+def analyze_comment(body: Comment):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Analyze the sentiment of the comment. Return ONLY a JSON object with 'sentiment' (positive/negative/neutral) and 'rating' (integer 1-5, where 5=highly positive, 1=highly negative)."},
+                {"role": "user", "content": body.comment}
+            ],
+            response_format={"type": "json_object"}
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        return {"error": str(e)}
