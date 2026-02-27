@@ -343,25 +343,53 @@ def ask(req: AskRequest):
             h, m, s = t // 3600, (t % 3600) // 60, t % 60
             chunks.append(f"[{h:02d}:{m:02d}:{s:02d}] {entry['text']}")
 
-        # Sample every 2nd entry, max 600 lines to fit GPT context
-        transcript_text = "\n".join(chunks[::2][:600])
+        # Search for topic words across full transcript
+        topic_lower = req.topic.lower()
+        topic_words = [w for w in topic_lower.split() if len(w) > 3]
+
+        # Find candidate chunks with word matches
+        scored = []
+        for i, entry in enumerate(transcript):
+            text_lower = entry["text"].lower()
+            score = sum(1 for word in topic_words if word in text_lower)
+            if score > 0:
+                scored.append((score, i, entry["start"]))
+        scored.sort(reverse=True)
+
+        # Take top 20 candidates and build context window around them
+        if scored:
+            # Get window of 30 entries around best matches
+            best_indices = [idx for _, idx, _ in scored[:5]]
+            context_chunks = []
+            for idx in sorted(set(best_indices)):
+                start = max(0, idx - 5)
+                end = min(len(chunks), idx + 10)
+                context_chunks.extend(chunks[start:end])
+            transcript_text = "\n".join(context_chunks[:200])
+        else:
+            # No word match - send chunks spread across full video
+            step = max(1, len(chunks) // 300)
+            transcript_text = "\n".join(chunks[::step][:300])
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{
                 "role": "user",
-                "content": f"""This is a YouTube video transcript with timestamps. Find the FIRST timestamp where this topic is spoken: "{req.topic}"
+                "content": f"""This is a YouTube transcript. Find the FIRST timestamp where this is spoken: "{req.topic}"
 
-Transcript:
 {transcript_text}
 
-Reply with ONLY the timestamp in HH:MM:SS format (e.g. 01:37:05). Nothing else."""
+Reply ONLY with the timestamp in HH:MM:SS format. Nothing else."""
             }],
             max_tokens=20
         )
         ts = response.choices[0].message.content.strip()
         if re.match(r'\d{2}:\d{2}:\d{2}', ts):
             return {"timestamp": ts, "video_url": req.video_url, "topic": req.topic}
+
+        # Fallback: return best word-match timestamp directly
+        if scored:
+            return {"timestamp": seconds_to_hhmmss(scored[0][2]), "video_url": req.video_url, "topic": req.topic}
 
         return {"timestamp": "00:00:00", "video_url": req.video_url, "topic": req.topic}
 
