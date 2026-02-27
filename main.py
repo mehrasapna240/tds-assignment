@@ -277,22 +277,58 @@ def seconds_to_hhmmss(seconds: float) -> str:
     s = seconds % 60
     return f"{h:02d}:{m:02d}:{s:02d}"
 
+def get_transcript_via_scrape(video_id: str):
+    """Fetch transcript by scraping YouTube page for timedtext URL."""
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    r = httpx.get(f"https://www.youtube.com/watch?v={video_id}", headers=headers, timeout=15)
+    html = r.text
+
+    # Find caption tracks
+    import xml.etree.ElementTree as ET
+    caption_url_match = re.search(r'"captionTracks":\[{"baseUrl":"([^"]+)"', html)
+    if not caption_url_match:
+        return None
+
+    caption_url = caption_url_match.group(1).replace('\\u0026', '&')
+    cr = httpx.get(caption_url, timeout=15)
+    root = ET.fromstring(cr.text)
+
+    transcript = []
+    for text_el in root.findall('.//text'):
+        start = float(text_el.get('start', 0))
+        text = text_el.text or ''
+        # Clean HTML entities
+        text = re.sub(r'<[^>]+>', '', text)
+        text = text.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&#39;', "'").replace('&quot;', '"')
+        transcript.append({'start': start, 'text': text.strip()})
+
+    return transcript
+
 @app.post("/ask")
 def ask(req: AskRequest):
     try:
         video_id = extract_video_id(req.video_url)
 
-        # Try to get transcript in multiple languages
+        # Try youtube-transcript-api first, then scraping
+        transcript = None
         try:
             transcript = YouTubeTranscriptApi.get_transcript(video_id)
         except Exception:
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            transcript = transcript_list.find_transcript(['en']).fetch()
+            pass
+
+        if not transcript:
+            try:
+                transcript = get_transcript_via_scrape(video_id)
+            except Exception:
+                pass
+
+        if not transcript:
+            return {"timestamp": "00:00:00", "video_url": req.video_url, "topic": req.topic}
 
         topic_lower = req.topic.lower()
         topic_words = [w for w in topic_lower.split() if len(w) > 3]
 
-        # Score each segment
+        # Score each segment by word matches
         scored = []
         for entry in transcript:
             text_lower = entry['text'].lower()
@@ -301,48 +337,38 @@ def ask(req: AskRequest):
                 scored.append((score, entry['start'], entry['text']))
         scored.sort(reverse=True)
 
-        if scored:
+        if scored and scored[0][0] >= 2:
             best_time = scored[0][1]
-        else:
-            # Use GPT to find timestamp from transcript chunks
-            # Build transcript text with timestamps
-            chunks = []
-            for entry in transcript:
-                t = int(entry['start'])
-                h, m, s = t // 3600, (t % 3600) // 60, t % 60
-                chunks.append(f"[{h:02d}:{m:02d}:{s:02d}] {entry['text']}")
+            return {"timestamp": seconds_to_hhmmss(best_time), "video_url": req.video_url, "topic": req.topic}
 
-            # Send to GPT in chunks (take every 3rd entry to fit context)
-            transcript_text = "\n".join(chunks[::2][:500])
+        # Use GPT with transcript context
+        chunks = []
+        for entry in transcript:
+            t = int(entry['start'])
+            h, m, s = t // 3600, (t % 3600) // 60, t % 60
+            chunks.append(f"[{h:02d}:{m:02d}:{s:02d}] {entry['text']}")
 
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{
-                    "role": "user",
-                    "content": f"""Here is a YouTube transcript with timestamps. Find the timestamp where this topic is first mentioned: "{req.topic}"
+        # Sample transcript evenly - take every 2nd entry, max 600 lines
+        transcript_text = "\n".join(chunks[::2][:600])
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{
+                "role": "user",
+                "content": f"""This is a YouTube video transcript with timestamps. Find the FIRST timestamp where this topic is spoken: "{req.topic}"
 
 Transcript:
 {transcript_text}
 
-Reply with ONLY the timestamp in HH:MM:SS format, nothing else."""
-                }],
-                max_tokens=20
-            )
-            ts = response.choices[0].message.content.strip()
-            # Validate format
-            if re.match(r'\d{2}:\d{2}:\d{2}', ts):
-                return {"timestamp": ts, "video_url": req.video_url, "topic": req.topic}
-            best_time = 0
+Reply with ONLY the timestamp in HH:MM:SS format (e.g. 01:37:05). Nothing else."""
+            }],
+            max_tokens=20
+        )
+        ts = response.choices[0].message.content.strip()
+        if re.match(r'\d{2}:\d{2}:\d{2}', ts):
+            return {"timestamp": ts, "video_url": req.video_url, "topic": req.topic}
 
-        return {
-            "timestamp": seconds_to_hhmmss(best_time),
-            "video_url": req.video_url,
-            "topic": req.topic
-        }
+        return {"timestamp": "00:00:00", "video_url": req.video_url, "topic": req.topic}
 
     except Exception as e:
-        return {
-            "timestamp": "00:00:00",
-            "video_url": req.video_url,
-            "topic": req.topic
-        }
+        return {"timestamp": "00:00:00", "video_url": req.video_url, "topic": req.topic}
