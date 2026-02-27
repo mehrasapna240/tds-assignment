@@ -304,6 +304,21 @@ def get_transcript_via_scrape(video_id: str):
 
     return transcript
 
+@app.get("/debug-transcript")
+def debug_transcript(video_id: str = "3c-iBn73dDE"):
+    results = {"video_id": video_id, "library": None, "scrape": None, "error_library": None, "error_scrape": None}
+    try:
+        t = YouTubeTranscriptApi.get_transcript(video_id)
+        results["library"] = f"OK - {len(t)} entries"
+    except Exception as e:
+        results["error_library"] = str(e)
+    try:
+        t2 = get_transcript_via_scrape(video_id)
+        results["scrape"] = f"OK - {len(t2)} entries" if t2 else "None"
+    except Exception as e:
+        results["error_scrape"] = str(e)
+    return results
+
 @app.post("/ask")
 def ask(req: AskRequest):
     try:
